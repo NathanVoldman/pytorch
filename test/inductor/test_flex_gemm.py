@@ -5402,6 +5402,20 @@ class TestFlexGemmEpilogueHOP(FlexGemmTestCase):
     def test_mm_local_m_reduce_result_feeds_main_output(self, group):
         m = 128
         n = 64
+        if SM120OrLater and group >= 16:
+            # SM120's mma.sync epilogue gives each M lane two rows of a 16-row
+            # group; grouped feed-main reduces across lanes only and rejects it
+            # (group 32 is already rejected by the config gate there).
+            with self.assertRaisesRegex(
+                Exception,
+                "grouped feed-main needs one group row per M lane"
+                "|no supported GemmConfig",
+            ):
+                self._run_local_m_reduce_result_feeds_main_output(m, n, group)
+            return
+        self._run_local_m_reduce_result_feeds_main_output(m, n, group)
+
+    def _run_local_m_reduce_result_feeds_main_output(self, m, n, group):
 
         def epilogue_fn(acc):
             x = acc.float().view(-1, group, n)
@@ -5826,6 +5840,12 @@ class TestFlexGemmEpilogueHOP(FlexGemmTestCase):
         b = torch.rand(64, n, device="cuda", dtype=torch.bfloat16)
         for group in (8, 16):
             fn, epilogue_fn = make_fn(group)
+            if SM120OrLater and group == 16:
+                with self.assertRaisesRegex(
+                    Exception, "grouped feed-main needs one group row per M lane"
+                ):
+                    torch.compile(fn, backend="inductor", fullgraph=True)(a, b)
+                continue
             actual, (code,) = run_and_get_code(
                 torch.compile(fn, backend="inductor", fullgraph=True), a, b
             )
@@ -5869,6 +5889,12 @@ class TestFlexGemmEpilogueHOP(FlexGemmTestCase):
         b = torch.rand(64, n, device="cuda", dtype=torch.bfloat16)
         for group in (8, 16):
             fn, epilogue_fn = make_fn(group)
+            if SM120OrLater and axis == 0 and group == 16:
+                with self.assertRaisesRegex(
+                    Exception, "grouped feed-main needs one group row per M lane"
+                ):
+                    torch.compile(fn, backend="inductor", fullgraph=True)(a, b)
+                continue
             actual = torch.compile(fn, backend="inductor", fullgraph=True)(a, b)
             self.assertMatchesEpilogue(
                 actual,

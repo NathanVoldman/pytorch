@@ -1284,6 +1284,21 @@ class GroupedLocalReduceFeed(GroupedReduceBase):
         """Group reduction of one register value, broadcast to the group's row
         lanes. The primitive the apply port calls per element, and the entry
         point for a hand-written mixin (loop it over the fragment)."""
+        # The butterfly below assumes one group row per M lane: it visits
+        # ``group`` lanes and never folds rows the same lane owns. On epilogue
+        # layouts where a lane holds several rows of one group (SM120's mma.sync
+        # fragment: rows r and r + 8 of a 16-row group across 8 M lanes) the
+        # offset past ``lanes_m`` leaves the warp, the shuffle returns the lane's
+        # own value, and the group value silently doubles a half-group sum.
+        if const_expr(
+            self.group > geom.lanes_m
+            or any(len(chunk) > 1 for chunk in geom.row_chunks)
+        ):
+            raise NotImplementedError(
+                "grouped feed-main needs one group row per M lane; this epilogue "
+                f"layout gives a lane {max(len(c) for c in geom.row_chunks)} rows "
+                f"of a {self.group}-row group across {geom.lanes_m} M lanes"
+            )
         combine_fn = const_expr(self.combine_fn)
         rows = const_expr(self.group // 2)
         while rows > 0:
