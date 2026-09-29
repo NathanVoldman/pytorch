@@ -4040,6 +4040,7 @@ class TestReductionsOnCPU(TestCase):
         for dim in range(D):
             self.assertEqual(actual_bin_edges[dim], expected_bin_edges[dim])
 
+    @skipIfTorchDynamo("histogramdd parameter combinations exceed the recompilation limit")
     def test_histogramdd(self):
         shapes = (
             (1, 5),
