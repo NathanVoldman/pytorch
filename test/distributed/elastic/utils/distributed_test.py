@@ -179,6 +179,16 @@ class DistributedUtilTest(TestCase):
                 is_server=True, server_addr=server_addr, server_port=store1.port
             )
 
+    def test_get_socket_with_port_reserves_all_addresses(self):
+        # The port is handed to a TCPStore server, which binds the wildcard
+        # address, so it must not be in use on any local address.
+        with closing(get_socket_with_port()) as sock:
+            port = sock.getsockname()[1]
+            for host in ("127.0.0.1", "127.0.0.2"):
+                with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+                    with self.assertRaises(OSError):
+                        s.bind((host, port))
+
     @skipIfRocmArch(MI200_ARCH)
     def test_port_already_in_use_on_worker(self):
         sock = get_socket_with_port()
